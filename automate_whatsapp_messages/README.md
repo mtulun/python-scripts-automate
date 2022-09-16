@@ -23,7 +23,7 @@ In 10 seconds, web.WhatsApp.com will open, and after 15 seconds, a message will 
 Great!! You have successfuly sent a message using python.
 
 
-Step 3: Send a message to a group on WhatsApp
+# Step 3: Send a message to a group on WhatsApp
 We can also send messages to a specific group on WhatsApp, but first, we have to get the group link.
 Once you have the link of the group, we have to use the .sendwhatmsg_to_group method. This method is similar to the one we used in step 2, but now we insert a group link.
 
