@@ -1,0 +1,1 @@
+This will Compress your photos into lower sizes while the quality same.

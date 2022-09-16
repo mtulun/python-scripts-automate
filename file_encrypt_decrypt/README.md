@@ -1,0 +1,1 @@
+A small script that can Encrypt/Decrypt any file.

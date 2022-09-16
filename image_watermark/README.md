@@ -1,0 +1,1 @@
+This simple script will watermark any image. You can set the Text, location, and Font.

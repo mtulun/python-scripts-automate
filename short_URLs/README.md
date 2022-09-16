@@ -1,0 +1,1 @@
+Sometimes big URLs become very annoying to read and share. This script uses an external API to short the URLs.

@@ -1,0 +1,1 @@
+Uses google Text to Speech API to convert your written Text to AI bot voice.

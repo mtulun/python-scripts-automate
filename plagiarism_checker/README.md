@@ -1,0 +1,1 @@
+This script checks Plagiarism between two files.

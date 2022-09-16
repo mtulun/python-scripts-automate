@@ -1,0 +1,1 @@
+This script will download the DP of any Instagram User. It uses module instaloader which takes username as input and downloads the DP as an output.
