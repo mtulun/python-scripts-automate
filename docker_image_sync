@@ -14,6 +14,11 @@ class ImageStatus:
         self.error = None
 
 
+def log_error(image, message):
+    with open("error.log", "a") as f:
+        f.write(f"[{image}] {message}\n")
+
+
 async def run_command(command):
     process = await asyncio.create_subprocess_exec(
         *command,
@@ -26,11 +31,21 @@ async def run_command(command):
     return True, None
 
 
-async def pull_and_optionally_push(image_status, semaphore, push=False, target_registry=None):
+async def run_command_with_retry(command, retries=2, delay=2):
+    for attempt in range(retries + 1):
+        success, error = await run_command(command)
+        if success:
+            return True, None
+        if attempt < retries:
+            await asyncio.sleep(delay)
+    return False, error
+
+
+async def pull_and_optionally_push(image_status, semaphore, push=False, target_registry=None, retries=2):
     async with semaphore:
         img = image_status.image
         image_status.status = "pulling"
-        success, error = await run_command(["docker", "pull", img])
+        success, error = await run_command_with_retry(["docker", "pull", img], retries=retries)
         if not success:
             image_status.status = "error"
             image_status.error = f"pull failed: {error}"
@@ -42,7 +57,7 @@ async def pull_and_optionally_push(image_status, semaphore, push=False, target_r
             image_name = img.split("/")[-1]
             target_image = f"{target_registry}/{image_name}"
 
-            tagged, error = await run_command(["docker", "tag", img, target_image])
+            tagged, error = await run_command_with_retry(["docker", "tag", img, target_image], retries=retries)
             if not tagged:
                 image_status.status = "error"
                 image_status.error = f"tag failed: {error}"
@@ -50,7 +65,7 @@ async def pull_and_optionally_push(image_status, semaphore, push=False, target_r
                 return
 
             image_status.status = "pushing"
-            pushed, error = await run_command(["docker", "push", target_image])
+            pushed, error = await run_command_with_retry(["docker", "push", target_image], retries=retries)
             if not pushed:
                 image_status.status = "error"
                 image_status.error = f"push failed: {error}"
@@ -58,11 +73,6 @@ async def pull_and_optionally_push(image_status, semaphore, push=False, target_r
                 return
 
         image_status.status = "done"
-
-
-def log_error(image, message):
-    with open("error.log", "a") as f:
-        f.write(f"[{image}] {message}\n")
 
 
 def build_status_table(image_status_list):
@@ -88,11 +98,12 @@ def build_status_table(image_status_list):
 
 
 async def main():
-    parser = argparse.ArgumentParser(description="Async Docker image pull/push with rich UI")
-    parser.add_argument("--image-list", required=True, help="File with image names")
-    parser.add_argument("--push", action="store_true", help="Also push images")
-    parser.add_argument("--target-registry", help="Target registry for push")
-    parser.add_argument("--max-concurrent", type=int, default=4, help="Max concurrent pulls/pushes (default=4)")
+    parser = argparse.ArgumentParser(description="Async Docker image pull/push tool with rich UI")
+    parser.add_argument("--image-list", required=True, help="File with image names (one per line)")
+    parser.add_argument("--push", action="store_true", help="Push images to target registry")
+    parser.add_argument("--target-registry", help="Target registry for pushing images")
+    parser.add_argument("--max-concurrent", type=int, default=4, help="Max number of concurrent operations (default: 4)")
+    parser.add_argument("--retry", type=int, default=2, help="Number of retries on failure (default: 2)")
     args = parser.parse_args()
 
     if args.push and not args.target_registry:
@@ -101,7 +112,7 @@ async def main():
     with open(args.image_list, "r") as f:
         images = [line.strip() for line in f if line.strip()]
 
-    # Temiz log
+    # Clear previous error log
     open("error.log", "w").close()
 
     image_status_list = [ImageStatus(image) for image in images]
@@ -110,7 +121,7 @@ async def main():
 
     async def runner():
         tasks = [
-            pull_and_optionally_push(status, semaphore, args.push, args.target_registry)
+            pull_and_optionally_push(status, semaphore, args.push, args.target_registry, retries=args.retry)
             for status in image_status_list
         ]
         await asyncio.gather(*tasks)
@@ -123,12 +134,13 @@ async def main():
         live.update(build_status_table(image_status_list))
 
     console.print("\n✅ [green bold]All done![/green bold]")
-    console.print("[blue]If there were errors, check [bold]error.log[/bold][/blue]")
+    if any(s.status == "error" for s in image_status_list):
+        console.print("[red]Some images failed. See [bold]error.log[/bold] for details.[/red]")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n⛔️ Interrupted.")
+        print("\n⛔️ Interrupted by user.")
         sys.exit(1)
